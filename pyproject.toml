@@ -50,8 +50,8 @@ all = [
 Homepage = "https://github.com/mgnsoscar/geometried"
 Repository = "https://github.com/mgnsoscar/geometried"
 
-# The two modules ship as top-level importable modules. The distribution is
-# named `geometried`; the import names are `geomeTried` (2D) and `geomeTried3d`
-# (3D), matching the original filenames.
+# The modules ship as top-level importable modules. The distribution is named
+# `geometried`; the import names are `geomeTried` (2D), `geomeTried3d` (3D), and
+# `geomeTried_structures` (ready-made parametric solids).
 [tool.setuptools]
-py-modules = ["geomeTried", "geomeTried3d"]
+py-modules = ["geomeTried", "geomeTried3d", "geomeTried_structures"]
