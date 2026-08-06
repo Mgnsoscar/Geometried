@@ -36,6 +36,7 @@ dependencies = [
     "trimesh[easy]>=4.0",
     "manifold3d",  # boolean union / difference / intersection
     "python-fcl",  # fast Structure.intersects_with
+    "pyglet<2",    # interactive Structure.show viewer
 ]
 # matplotlib preview via Shape.show.
 plot = ["matplotlib"]
@@ -43,6 +44,7 @@ all = [
     "trimesh[easy]>=4.0",
     "manifold3d",
     "python-fcl",
+    "pyglet<2",
     "matplotlib",
 ]
 

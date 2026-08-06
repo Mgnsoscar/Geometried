@@ -23,7 +23,7 @@ from __future__ import annotations
 import numpy as np
 import trimesh
 
-import geomeTried as g2
+import geomeTried as g2  # noqa: F401  (kept for API parity / future structures)
 import geomeTried3d as g3
 from geomeTried3d import Structure
 
@@ -31,21 +31,27 @@ ArrayLike = np.typing.ArrayLike
 
 __all__ = ["HoneycombCylinder"]
 
+# Pointy-top hexagon, vertices counterclockwise, a vertex on top. Multiply by
+# the circumradius to get (tangential, axial) offsets for each corner.
+_HEX_ANGLE = np.radians(90.0 + 60.0 * np.arange(6))
+
 
 class HoneycombCylinder(Structure):
     """
     Hollow cylinder whose wall is perforated with hexagonal holes in a
     honeycomb pattern.
 
-    Each hole is a hexagonal prism whose long axis is radial - it points
-    straight at the cylinder's centre axis and punches through the wall.
+    Each hole is a hexagonal wedge focused on the cylinder's centre axis: its
+    six corners lie on rays that emanate from the axis, so the hexagon scales
+    with radius - a little smaller on the inner surface, a little larger on the
+    outer surface. Extrapolated inward, every corner would meet the axis.
 
-    The line thickness between holes (the web) is the controlling parameter: it
-    is held uniform and exact, and the holes are made as large as they can be
-    for that web, at a size as close as possible to `hole_size`.
-    Circumferentially the pitch is nudged so a whole number of columns closes up
-    (no seam). Axially the pattern is centred and clipped by the tube ends, so
-    the top cutoff mirrors the bottom.
+    `line_thickness` and `hole_size` are measured on the outer surface. The web
+    is the controlling parameter: the holes are made as large as they can be for
+    that web, at a size as close as possible to `hole_size`. Circumferentially
+    the pitch is nudged so a whole number of columns closes up (no seam).
+    Axially the pattern is centred and clipped by the tube ends, so the top
+    cutoff mirrors the bottom.
     """
 
     # design metadata carried across `copy()` (see below)
@@ -72,11 +78,12 @@ class HoneycombCylinder(Structure):
         height         : overall height of the tube (z extent).
         outer_radius   : outer radius of the wall.
         wall_thickness : radial wall thickness (outer_radius - inner_radius).
-        line_thickness : the web between neighbouring holes. Held uniform and
-                         exact in every direction - the controlling parameter.
-        hole_size      : target hexagon size across the flats. Holes are made as
-                         large as possible for the given `line_thickness`, as
-                         close to this target as the wrap-around allows.
+        line_thickness : the web between neighbouring holes, measured on the
+                         outer surface. The controlling parameter.
+        hole_size      : target hexagon size across the flats on the outer
+                         surface. Holes are made as large as possible for the
+                         given `line_thickness`, as close to this as the
+                         wrap-around allows.
         sections       : facet count for the cylinders (higher = rounder).
         clearance      : how far each cutter overshoots the wall on each side.
                          Defaults to a quarter of the wall thickness.
@@ -89,19 +96,19 @@ class HoneycombCylinder(Structure):
 
         clearance = 0.25 * wall_thickness if clearance is None else clearance
         inner_radius = outer_radius - wall_thickness
-        r_mid = outer_radius - wall_thickness / 2.0
 
         # --- the plain hollow tube ---------------------------------------- #
         tube = g3.Cylinder(outer_radius, height, sections=sections).difference(
             g3.Cylinder(inner_radius, height + 2.0, sections=sections)
         )
 
-        # --- honeycomb lattice on the mid-wall surface -------------------- #
+        # --- honeycomb lattice on the OUTER surface ----------------------- #
         # Wrap-neat: choose the column count from the target cell, then
-        # back-solve the exact centre pitch. The web is held exact and the hole
-        # size is whatever is left over (as big as possible for that web).
-        n_cols = max(1, round(2.0 * np.pi * r_mid / (hole_size + line_thickness)))
-        d = 2.0 * np.pi * r_mid / n_cols                # exact centre pitch
+        # back-solve the exact centre pitch. The web is held exact (on the outer
+        # surface) and the hole size is whatever is left over.
+        r_ref = outer_radius
+        n_cols = max(1, round(2.0 * np.pi * r_ref / (hole_size + line_thickness)))
+        d = 2.0 * np.pi * r_ref / n_cols                # exact centre pitch
         across_flats = d - line_thickness               # holes fill the rest
         if across_flats <= 0:
             raise ValueError(
@@ -112,43 +119,43 @@ class HoneycombCylinder(Structure):
         d_theta = 2.0 * np.pi / n_cols                  # angular column pitch
         row_pitch = d * np.sqrt(3.0) / 2.0              # axial row spacing
 
-        # Fill the full height, centred on z = 0: keep every row whose hexagon
-        # reaches into the tube. Rows +j and -j share the same angular offset,
-        # so the top and bottom cutoffs match.
+        # Fill the full height, centred on z = 0. Rows +j and -j share the same
+        # angular offset, so the top and bottom cutoffs match.
         n_rows_half = int(np.floor((height / 2.0 + a) / row_pitch))
 
-        # --- one radial hex-prism cutter, oriented for theta = 0 ---------- #
-        # Pointy-top hexagon in the x-y plane: across-flats along x, a vertex on
-        # +y. Extrude along z, then swing z -> radial and y -> world-z so the
-        # hexagon's points run along the cylinder axis everywhere.
-        length = wall_thickness + 2.0 * clearance
-        base = (
-            g2.RegularPolygon.from_width_across_flats(across_flats, 6)
-            .extrude_polygon(length)    # prism axis +z
-        )
-        base.rotate(90, axis=(1, 0, 0))  # hexagon points -> world +z
-        base.rotate(90, axis=(0, 0, 1))  # prism axis -> +x (radial at theta = 0)
+        # Each corner sits on a ray from the axis: fixed angular offset (so the
+        # hexagon scales with radius) and fixed z. The cutter spans the wall
+        # from just inside to just outside; extended inward the corners meet the
+        # axis.
+        r_in = inner_radius - clearance
+        r_out = outer_radius + clearance
+        t = a * np.cos(_HEX_ANGLE)          # tangential corner offsets
+        dz = a * np.sin(_HEX_ANGLE)         # axial corner offsets
+        dphi = t / r_ref                    # angular corner offsets (radius-free)
 
-        cutters = []
+        verts_all, faces_all, base = [], [], 0
         for j in range(-n_rows_half, n_rows_half + 1):
             z0 = j * row_pitch
             theta0 = (0.5 * (j & 1)) * d_theta   # offset odd rows by half a column
             for i in range(n_cols):
-                theta = theta0 + i * d_theta
-                c = base.copy()
-                c.rotate(np.degrees(theta), axis=(0, 0, 1), point=(0, 0, 0))
-                c.translate((r_mid * np.cos(theta), r_mid * np.sin(theta), z0))
-                cutters.append(c.mesh)
+                phi = theta0 + i * d_theta + dphi
+                cph, sph = np.cos(phi), np.sin(phi)
+                z = z0 + dz
+                inner = np.column_stack([r_in * cph, r_in * sph, z])
+                outer = np.column_stack([r_out * cph, r_out * sph, z])
+                verts_all.append(np.vstack([inner, outer]))
+                faces_all.append(_FRUSTUM_FACES + base)
+                base += 12
 
-        # Disjoint cutters: concatenate into one mesh (no boolean union needed),
-        # then subtract in a single pass.
-        holes = g3.Structure(trimesh.util.concatenate(cutters))
+        holes = g3.Structure(_frustum_mesh(
+            np.vstack(verts_all), np.vstack(faces_all)
+        ))
         result = tube.difference(holes)
 
         super().__init__(result.mesh)
         self.translate(pos)
 
-        # design metadata (as built)
+        # design metadata (as built, measured on the outer surface)
         self.height = height
         self.outer_radius = outer_radius
         self.wall_thickness = wall_thickness
@@ -175,3 +182,21 @@ class HoneycombCylinder(Structure):
             f"hole_across_flats={self.hole_across_flats:.4g}, "
             f"columns={self.n_columns}, rows={self.n_rows})"
         )
+
+
+# Faces of one 12-vertex hexagonal frustum: 0..5 inner ring, 6..11 outer ring.
+# Six side quads (two triangles each) plus a triangulated cap on each ring.
+_FRUSTUM_FACES = np.array(
+    [[k, (k + 1) % 6, 6 + (k + 1) % 6] for k in range(6)]
+    + [[k, 6 + (k + 1) % 6, 6 + k] for k in range(6)]
+    + [[0, k, k + 1] for k in range(1, 5)]              # inner cap
+    + [[6, 6 + k + 1, 6 + k] for k in range(1, 5)],     # outer cap
+    dtype=np.int64,
+)
+
+
+def _frustum_mesh(vertices: np.ndarray, faces: np.ndarray) -> trimesh.Trimesh:
+    """Assemble the concatenated cutters into one mesh with outward normals."""
+    mesh = trimesh.Trimesh(vertices=vertices, faces=faces, process=False)
+    mesh.fix_normals()
+    return mesh
