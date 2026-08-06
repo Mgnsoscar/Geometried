@@ -1,0 +1,57 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "geometried"
+version = "0.1.0"
+description = "Chainable 2D and 3D geometry primitives built on shapely and trimesh."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { file = "LICENSE" }
+authors = [{ name = "Magnus Oscar Støleggen" }]
+keywords = ["geometry", "2d", "3d", "shapely", "trimesh", "cad", "mesh", "polygon"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Mathematics",
+    "Topic :: Multimedia :: Graphics :: 3D Modeling",
+]
+dependencies = [
+    "numpy",
+    "shapely>=2.0",
+]
+
+[project.optional-dependencies]
+# 3D solids (Structure, Box, Cylinder, ...) and the Shape lathe constructors.
+# trimesh[easy] pulls in the companions the mesh ops here rely on - scipy and
+# networkx for graph/normal fixing, rtree for Structure.contains.
+"3d" = [
+    "trimesh[easy]>=4.0",
+    "manifold3d",  # boolean union / difference / intersection
+    "python-fcl",  # fast Structure.intersects_with
+]
+# matplotlib preview via Shape.show.
+plot = ["matplotlib"]
+all = [
+    "trimesh[easy]>=4.0",
+    "manifold3d",
+    "python-fcl",
+    "matplotlib",
+]
+
+[project.urls]
+Homepage = "https://github.com/mgnsoscar/geometried"
+Repository = "https://github.com/mgnsoscar/geometried"
+
+# The two modules ship as top-level importable modules. The distribution is
+# named `geometried`; the import names are `geomeTried` (2D) and `geomeTried3d`
+# (3D), matching the original filenames.
+[tool.setuptools]
+py-modules = ["geomeTried", "geomeTried3d"]
