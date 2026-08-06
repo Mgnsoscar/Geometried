@@ -42,9 +42,10 @@ class HoneycombCylinder(Structure):
     honeycomb pattern.
 
     Each hole is a hexagonal wedge focused on the cylinder's centre axis: its
-    six corners lie on rays that emanate from the axis, so the hexagon scales
-    with radius - a little smaller on the inner surface, a little larger on the
-    outer surface. Extrapolated inward, every corner would meet the axis.
+    six corners ride rays from a single point on the axis, so the hexagon
+    scales uniformly with radius and stays a proper regular hexagon everywhere
+    through the wall - a little smaller on the inner surface, a little larger on
+    the outer. Extrapolated inward, all six corners meet at that axis point.
 
     `line_thickness` and `hole_size` are measured on the outer surface. The web
     is the controlling parameter: the holes are made as large as they can be for
@@ -123,14 +124,16 @@ class HoneycombCylinder(Structure):
         # angular offset, so the top and bottom cutoffs match.
         n_rows_half = int(np.floor((height / 2.0 + a) / row_pitch))
 
-        # Each corner sits on a ray from the axis: fixed angular offset (so the
-        # hexagon scales with radius) and fixed z. The cutter spans the wall
-        # from just inside to just outside; extended inward the corners meet the
-        # axis.
+        # Each corner rides a ray from a point on the axis at the hole's height:
+        # the angular offset is fixed and the axial offset scales with radius,
+        # exactly as the tangential extent does. The hexagon therefore scales
+        # uniformly with radius and stays regular through the wall. The cutter
+        # spans the wall from just inside to just outside; extended inward all
+        # six corners meet the axis point.
         r_in = inner_radius - clearance
         r_out = outer_radius + clearance
-        t = a * np.cos(_HEX_ANGLE)          # tangential corner offsets
-        dz = a * np.sin(_HEX_ANGLE)         # axial corner offsets
+        t = a * np.cos(_HEX_ANGLE)          # tangential corner offsets (@ r_ref)
+        dz = a * np.sin(_HEX_ANGLE)         # axial corner offsets (@ r_ref)
         dphi = t / r_ref                    # angular corner offsets (radius-free)
 
         verts_all, faces_all, base = [], [], 0
@@ -140,9 +143,12 @@ class HoneycombCylinder(Structure):
             for i in range(n_cols):
                 phi = theta0 + i * d_theta + dphi
                 cph, sph = np.cos(phi), np.sin(phi)
-                z = z0 + dz
-                inner = np.column_stack([r_in * cph, r_in * sph, z])
-                outer = np.column_stack([r_out * cph, r_out * sph, z])
+                inner = np.column_stack(
+                    [r_in * cph, r_in * sph, z0 + (r_in / r_ref) * dz]
+                )
+                outer = np.column_stack(
+                    [r_out * cph, r_out * sph, z0 + (r_out / r_ref) * dz]
+                )
                 verts_all.append(np.vstack([inner, outer]))
                 faces_all.append(_FRUSTUM_FACES + base)
                 base += 12
