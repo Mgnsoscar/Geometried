@@ -47,6 +47,21 @@ that turn a 2D profile into a solid, require the `[3d]` extra.
 **3D — `geomeTried3d`**: `Structure`, `Box`, `Cylinder`, `Sphere`, `Cone`,
 `Pyramid`.
 
+**Custom structures — `geomeTried_structures`**: a growing collection of
+ready-made parametric solids, each a `Structure` subclass. Currently
+`HoneycombCylinder` — a hollow tube whose wall is perforated with radial
+hexagonal holes in a seamless honeycomb pattern.
+
+```python
+from geomeTried_structures import HoneycombCylinder
+
+part = HoneycombCylinder(
+    height=60, outer_radius=30, wall_thickness=4,
+    line_thickness=2.5, hole_size=7,   # line_thickness (the web) is exact; holes fill the rest
+)
+part.export("part.stl")
+```
+
 All primitives support translation, rotation, scaling, alignment helpers
 (`min_to`, `max_to`, `min_along_to`, …), boolean operations (`union`,
 `intersection`, `difference`), convex hulls, and rich extent/anchor properties
