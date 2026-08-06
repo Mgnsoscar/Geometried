@@ -58,6 +58,7 @@ from geomeTried_structures import HoneycombCylinder
 part = HoneycombCylinder(
     height=60, outer_radius=30, wall_thickness=4,
     line_thickness=2.5, hole_size=7,   # line_thickness (the web) is exact; holes fill the rest
+    orientation="flat_top",            # or "pointy_top"
 )
 part.export("part.stl")
 ```

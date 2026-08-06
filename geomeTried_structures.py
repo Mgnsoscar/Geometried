@@ -31,22 +31,24 @@ ArrayLike = np.typing.ArrayLike
 
 __all__ = ["HoneycombCylinder"]
 
-# Pointy-top hexagon corners, counterclockwise, a vertex on top. Multiply by
-# the circumradius to get (tangential, axial) offsets for each corner.
-_HEX_CORNERS = np.radians(90.0 + 60.0 * np.arange(7))  # 7th closes the loop
+# A vertex sits at `start_angle`; the rest follow every 60 degrees. Pointy-top
+# puts a vertex on top (start 90), flat-top puts a flat edge on top (start 0).
+_HEX_START = {"pointy_top": 90.0, "flat_top": 0.0}
 
 
-def _hex_boundary(a: float, segments: int) -> np.ndarray:
+def _hex_boundary(a: float, segments: int, start_angle: float) -> np.ndarray:
     """
-    Boundary of a pointy-top hexagon of circumradius `a` as (tangential, axial)
-    offsets, with each of the six edges split into `segments` straight pieces.
+    Boundary of a hexagon of circumradius `a` as (tangential, axial) offsets,
+    with each of the six edges split into `segments` straight pieces. A corner
+    is placed at `start_angle` degrees.
 
     Subdividing the edges matters here: each cutter's side faces are ruled by
     radial generators, so putting several generators along every edge makes the
     hole boundary follow the true straight edge on both the inner and outer
     surface, instead of being kinked by a single quad's diagonal.
     """
-    corners = np.column_stack([np.cos(_HEX_CORNERS), np.sin(_HEX_CORNERS)]) * a
+    ang = np.radians(start_angle + 60.0 * np.arange(7))   # 7th closes the loop
+    corners = np.column_stack([np.cos(ang), np.sin(ang)]) * a
     m = np.arange(segments) / segments
     pts = [corners[k] + (corners[k + 1] - corners[k]) * m[:, None] for k in range(6)]
     return np.vstack(pts)   # (6 * segments, 2): columns are tangential, axial
@@ -59,6 +61,66 @@ def _cutter_faces(p: int) -> np.ndarray:
     inner_cap = [[0, k, k + 1] for k in range(1, p - 1)]
     outer_cap = [[p, p + k + 1, p + k] for k in range(1, p - 1)]
     return np.array(side + inner_cap + outer_cap, dtype=np.int64)
+
+
+def _honeycomb_centres(
+    orientation: str,
+    r_ref: float,
+    height: float,
+    d_target: float,
+    line_thickness: float,
+) -> tuple[list[tuple[float, float]], int, int, float]:
+    """
+    Hole centres (theta, z) of a honeycomb on the outer surface, plus the column
+    count, a representative row count, and the actual lattice spacing `d`.
+
+    The lattice is triangular with nearest-neighbour spacing `d`; the target
+    spacing is nudged so a whole number of columns wraps the circumference. The
+    pattern is centred on z = 0 and fills the height (edge holes are clipped by
+    the tube ends). Rows/columns are symmetric about z = 0, so the top and
+    bottom cutoffs match.
+
+    - pointy_top: rows run circumferentially, offset tangentially. Any column
+      count wraps cleanly.
+    - flat_top: columns run axially, offset axially. The column count is forced
+      even so the axial offset lines up across the seam.
+    """
+    two_pi_r = 2.0 * np.pi * r_ref
+    centres: list[tuple[float, float]] = []
+
+    if orientation == "pointy_top":
+        n_cols = max(1, round(two_pi_r / d_target))
+        d = two_pi_r / n_cols                       # tangential column pitch
+        d_theta = 2.0 * np.pi / n_cols
+        row_pitch = d * np.sqrt(3.0) / 2.0          # axial row spacing
+        vert_half = max(d - line_thickness, 0.0) / np.sqrt(3.0)  # top vertex height
+        n_rows_half = int(np.floor((height / 2.0 + vert_half) / row_pitch))
+        for j in range(-n_rows_half, n_rows_half + 1):
+            z0 = j * row_pitch
+            theta0 = (0.5 * (j & 1)) * d_theta      # offset odd rows tangentially
+            for i in range(n_cols):
+                centres.append((theta0 + i * d_theta, z0))
+        return centres, n_cols, 2 * n_rows_half + 1, d
+
+    # flat_top
+    n_cols = max(2, round(two_pi_r / (d_target * np.sqrt(3.0) / 2.0)))
+    if n_cols % 2:                                  # even columns -> seamless wrap
+        n_cols += 1
+    col_pitch = two_pi_r / n_cols                   # tangential = d * sqrt(3) / 2
+    d = 2.0 * col_pitch / np.sqrt(3.0)
+    d_theta = 2.0 * np.pi / n_cols
+    vert_half = max(d - line_thickness, 0.0) / 2.0  # top flat-edge height
+    zlimit = height / 2.0 + vert_half
+    n_rows = 0
+    for i in range(n_cols):
+        theta = i * d_theta
+        zoff = (0.5 * (i & 1)) * d                  # offset odd columns axially
+        kmin = int(np.ceil((-zlimit - zoff) / d))
+        kmax = int(np.floor((zlimit - zoff) / d))
+        for k in range(kmin, kmax + 1):
+            centres.append((theta, k * d + zoff))
+        n_rows = max(n_rows, kmax - kmin + 1)
+    return centres, n_cols, n_rows, d
 
 
 class HoneycombCylinder(Structure):
@@ -78,13 +140,18 @@ class HoneycombCylinder(Structure):
     the pitch is nudged so a whole number of columns closes up (no seam).
     Axially the pattern is centred and clipped by the tube ends, so the top
     cutoff mirrors the bottom.
+
+    `orientation` sets the hexagon rotation. "flat_top" (default) puts a flat
+    edge on the top and bottom of each hexagon; "pointy_top" puts a vertex there.
+    The honeycomb lattice rotates to match. Flat-top columns are offset axially,
+    so the column count is forced even to keep the wrap seamless.
     """
 
     # design metadata carried across `copy()` (see below)
     _META = (
         "height", "outer_radius", "wall_thickness", "inner_radius",
-        "line_thickness", "hole_size", "hole_across_flats",
-        "n_columns", "n_rows", "sections",
+        "line_thickness", "hole_size", "hole_across_flats", "orientation",
+        "n_columns", "n_rows", "n_holes", "sections",
     )
 
     def __init__(
@@ -94,6 +161,7 @@ class HoneycombCylinder(Structure):
         wall_thickness: float,
         line_thickness: float,
         hole_size: float,
+        orientation: str = "flat_top",
         sections: int = 160,
         edge_segments: int = 8,
         clearance: float | None = None,
@@ -111,6 +179,8 @@ class HoneycombCylinder(Structure):
                          surface. Holes are made as large as possible for the
                          given `line_thickness`, as close to this as the
                          wrap-around allows.
+        orientation    : "flat_top" (flat edge on top, default) or "pointy_top"
+                         (vertex on top). The lattice rotates to match.
         sections       : facet count for the cylinders (higher = rounder).
         edge_segments  : pieces each hexagon edge is split into. Higher values
                          make the tapered hole edges follow the true straight
@@ -119,6 +189,10 @@ class HoneycombCylinder(Structure):
                          Defaults to a quarter of the wall thickness.
         pos            : position of the finished solid's centre.
         """
+        if orientation not in _HEX_START:
+            raise ValueError(
+                f"orientation must be one of {sorted(_HEX_START)}, got {orientation!r}."
+            )
         if edge_segments < 1:
             raise ValueError("edge_segments must be at least 1.")
         if min(height, outer_radius, wall_thickness, hole_size, line_thickness) <= 0:
@@ -135,25 +209,21 @@ class HoneycombCylinder(Structure):
         )
 
         # --- honeycomb lattice on the OUTER surface ----------------------- #
-        # Wrap-neat: choose the column count from the target cell, then
-        # back-solve the exact centre pitch. The web is held exact (on the outer
-        # surface) and the hole size is whatever is left over.
+        # A triangular lattice with nearest-neighbour spacing `d`. `hole_size`
+        # and `line_thickness` set the target spacing; the actual `d` is
+        # back-solved so a whole number of columns closes up (no seam), holding
+        # the web (line_thickness) exact and letting the hole size take up the
+        # slack. `n_rows`/`n_columns` here are the lattice centres.
         r_ref = outer_radius
-        n_cols = max(1, round(2.0 * np.pi * r_ref / (hole_size + line_thickness)))
-        d = 2.0 * np.pi * r_ref / n_cols                # exact centre pitch
+        centres, n_cols, n_rows, d = _honeycomb_centres(
+            orientation, r_ref, height, hole_size + line_thickness, line_thickness
+        )
         across_flats = d - line_thickness               # holes fill the rest
         if across_flats <= 0:
             raise ValueError(
                 "line_thickness is too large for this hole_size / radius."
             )
         a = across_flats / np.sqrt(3.0)                 # hexagon circumradius
-
-        d_theta = 2.0 * np.pi / n_cols                  # angular column pitch
-        row_pitch = d * np.sqrt(3.0) / 2.0              # axial row spacing
-
-        # Fill the full height, centred on z = 0. Rows +j and -j share the same
-        # angular offset, so the top and bottom cutoffs match.
-        n_rows_half = int(np.floor((height / 2.0 + a) / row_pitch))
 
         # Each corner is extruded radially from its own point on the axis: the
         # angular offset is fixed while the height z stays constant with radius.
@@ -163,25 +233,22 @@ class HoneycombCylinder(Structure):
         # true straight edges on both surfaces (no diagonal kink).
         r_in = inner_radius - clearance
         r_out = outer_radius + clearance
-        boundary = _hex_boundary(a, edge_segments)      # (P, 2): tangential, axial
+        boundary = _hex_boundary(a, edge_segments, _HEX_START[orientation])
         p = len(boundary)
         dphi = boundary[:, 0] / r_ref                   # angular offsets (radius-free)
         dz = boundary[:, 1]                             # axial offsets (constant in r)
         faces_template = _cutter_faces(p)
 
         verts_all, faces_all, base = [], [], 0
-        for j in range(-n_rows_half, n_rows_half + 1):
-            z0 = j * row_pitch
-            theta0 = (0.5 * (j & 1)) * d_theta   # offset odd rows by half a column
-            for i in range(n_cols):
-                phi = theta0 + i * d_theta + dphi
-                cph, sph = np.cos(phi), np.sin(phi)
-                z = z0 + dz
-                inner = np.column_stack([r_in * cph, r_in * sph, z])
-                outer = np.column_stack([r_out * cph, r_out * sph, z])
-                verts_all.append(np.vstack([inner, outer]))
-                faces_all.append(faces_template + base)
-                base += 2 * p
+        for theta0, z0 in centres:
+            phi = theta0 + dphi
+            cph, sph = np.cos(phi), np.sin(phi)
+            z = z0 + dz
+            inner = np.column_stack([r_in * cph, r_in * sph, z])
+            outer = np.column_stack([r_out * cph, r_out * sph, z])
+            verts_all.append(np.vstack([inner, outer]))
+            faces_all.append(faces_template + base)
+            base += 2 * p
 
         holes = g3.Structure(_frustum_mesh(
             np.vstack(verts_all), np.vstack(faces_all)
@@ -199,8 +266,10 @@ class HoneycombCylinder(Structure):
         self.line_thickness = line_thickness
         self.hole_size = hole_size
         self.hole_across_flats = across_flats
+        self.orientation = orientation
         self.n_columns = n_cols
-        self.n_rows = 2 * n_rows_half + 1
+        self.n_rows = n_rows
+        self.n_holes = len(centres)
         self.sections = sections
 
     def copy(self):
@@ -216,7 +285,8 @@ class HoneycombCylinder(Structure):
             f"wall_thickness={self.wall_thickness:.4g}, "
             f"line_thickness={self.line_thickness:.4g}, "
             f"hole_across_flats={self.hole_across_flats:.4g}, "
-            f"columns={self.n_columns}, rows={self.n_rows})"
+            f"orientation={self.orientation!r}, "
+            f"columns={self.n_columns}, holes={self.n_holes})"
         )
 
 
