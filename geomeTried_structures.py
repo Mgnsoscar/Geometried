@@ -31,9 +31,34 @@ ArrayLike = np.typing.ArrayLike
 
 __all__ = ["HoneycombCylinder"]
 
-# Pointy-top hexagon, vertices counterclockwise, a vertex on top. Multiply by
+# Pointy-top hexagon corners, counterclockwise, a vertex on top. Multiply by
 # the circumradius to get (tangential, axial) offsets for each corner.
-_HEX_ANGLE = np.radians(90.0 + 60.0 * np.arange(6))
+_HEX_CORNERS = np.radians(90.0 + 60.0 * np.arange(7))  # 7th closes the loop
+
+
+def _hex_boundary(a: float, segments: int) -> np.ndarray:
+    """
+    Boundary of a pointy-top hexagon of circumradius `a` as (tangential, axial)
+    offsets, with each of the six edges split into `segments` straight pieces.
+
+    Subdividing the edges matters here: each cutter's side faces are ruled by
+    radial generators, so putting several generators along every edge makes the
+    hole boundary follow the true straight edge on both the inner and outer
+    surface, instead of being kinked by a single quad's diagonal.
+    """
+    corners = np.column_stack([np.cos(_HEX_CORNERS), np.sin(_HEX_CORNERS)]) * a
+    m = np.arange(segments) / segments
+    pts = [corners[k] + (corners[k + 1] - corners[k]) * m[:, None] for k in range(6)]
+    return np.vstack(pts)   # (6 * segments, 2): columns are tangential, axial
+
+
+def _cutter_faces(p: int) -> np.ndarray:
+    """Faces for one radial cutter: `p` inner-ring verts then `p` outer-ring."""
+    side = [[k, (k + 1) % p, p + (k + 1) % p] for k in range(p)] \
+        + [[k, p + (k + 1) % p, p + k] for k in range(p)]
+    inner_cap = [[0, k, k + 1] for k in range(1, p - 1)]
+    outer_cap = [[p, p + k + 1, p + k] for k in range(1, p - 1)]
+    return np.array(side + inner_cap + outer_cap, dtype=np.int64)
 
 
 class HoneycombCylinder(Structure):
@@ -41,11 +66,11 @@ class HoneycombCylinder(Structure):
     Hollow cylinder whose wall is perforated with hexagonal holes in a
     honeycomb pattern.
 
-    Each hole is a hexagonal wedge focused on the cylinder's centre axis: its
-    six corners ride rays from a single point on the axis, so the hexagon
-    scales uniformly with radius and stays a proper regular hexagon everywhere
-    through the wall - a little smaller on the inner surface, a little larger on
-    the outer. Extrapolated inward, all six corners meet at that axis point.
+    Each hole is a hexagonal wedge focused on the cylinder's centre axis: every
+    corner is extruded radially from its own point on the axis, so the hexagon
+    keeps its full height through the wall and shrinks only in width toward the
+    inner surface (the corners fan out purely tangentially as the radius grows).
+    Extrapolated inward, the whole hexagon collapses onto a segment of the axis.
 
     `line_thickness` and `hole_size` are measured on the outer surface. The web
     is the controlling parameter: the holes are made as large as they can be for
@@ -70,6 +95,7 @@ class HoneycombCylinder(Structure):
         line_thickness: float,
         hole_size: float,
         sections: int = 160,
+        edge_segments: int = 8,
         clearance: float | None = None,
         pos: ArrayLike = (0, 0, 0),
     ):
@@ -86,10 +112,15 @@ class HoneycombCylinder(Structure):
                          given `line_thickness`, as close to this as the
                          wrap-around allows.
         sections       : facet count for the cylinders (higher = rounder).
+        edge_segments  : pieces each hexagon edge is split into. Higher values
+                         make the tapered hole edges follow the true straight
+                         line more closely on the inner surface.
         clearance      : how far each cutter overshoots the wall on each side.
                          Defaults to a quarter of the wall thickness.
         pos            : position of the finished solid's centre.
         """
+        if edge_segments < 1:
+            raise ValueError("edge_segments must be at least 1.")
         if min(height, outer_radius, wall_thickness, hole_size, line_thickness) <= 0:
             raise ValueError("dimensions must be positive.")
         if wall_thickness >= outer_radius:
@@ -124,17 +155,19 @@ class HoneycombCylinder(Structure):
         # angular offset, so the top and bottom cutoffs match.
         n_rows_half = int(np.floor((height / 2.0 + a) / row_pitch))
 
-        # Each corner rides a ray from a point on the axis at the hole's height:
-        # the angular offset is fixed and the axial offset scales with radius,
-        # exactly as the tangential extent does. The hexagon therefore scales
-        # uniformly with radius and stays regular through the wall. The cutter
-        # spans the wall from just inside to just outside; extended inward all
-        # six corners meet the axis point.
+        # Each corner is extruded radially from its own point on the axis: the
+        # angular offset is fixed while the height z stays constant with radius.
+        # So the hexagon keeps its full height and only its width grows with the
+        # radius. The cutter spans the wall from just inside to just outside.
+        # The hexagon boundary is subdivided so the ruled side faces trace the
+        # true straight edges on both surfaces (no diagonal kink).
         r_in = inner_radius - clearance
         r_out = outer_radius + clearance
-        t = a * np.cos(_HEX_ANGLE)          # tangential corner offsets (@ r_ref)
-        dz = a * np.sin(_HEX_ANGLE)         # axial corner offsets (@ r_ref)
-        dphi = t / r_ref                    # angular corner offsets (radius-free)
+        boundary = _hex_boundary(a, edge_segments)      # (P, 2): tangential, axial
+        p = len(boundary)
+        dphi = boundary[:, 0] / r_ref                   # angular offsets (radius-free)
+        dz = boundary[:, 1]                             # axial offsets (constant in r)
+        faces_template = _cutter_faces(p)
 
         verts_all, faces_all, base = [], [], 0
         for j in range(-n_rows_half, n_rows_half + 1):
@@ -143,15 +176,12 @@ class HoneycombCylinder(Structure):
             for i in range(n_cols):
                 phi = theta0 + i * d_theta + dphi
                 cph, sph = np.cos(phi), np.sin(phi)
-                inner = np.column_stack(
-                    [r_in * cph, r_in * sph, z0 + (r_in / r_ref) * dz]
-                )
-                outer = np.column_stack(
-                    [r_out * cph, r_out * sph, z0 + (r_out / r_ref) * dz]
-                )
+                z = z0 + dz
+                inner = np.column_stack([r_in * cph, r_in * sph, z])
+                outer = np.column_stack([r_out * cph, r_out * sph, z])
                 verts_all.append(np.vstack([inner, outer]))
-                faces_all.append(_FRUSTUM_FACES + base)
-                base += 12
+                faces_all.append(faces_template + base)
+                base += 2 * p
 
         holes = g3.Structure(_frustum_mesh(
             np.vstack(verts_all), np.vstack(faces_all)
@@ -188,17 +218,6 @@ class HoneycombCylinder(Structure):
             f"hole_across_flats={self.hole_across_flats:.4g}, "
             f"columns={self.n_columns}, rows={self.n_rows})"
         )
-
-
-# Faces of one 12-vertex hexagonal frustum: 0..5 inner ring, 6..11 outer ring.
-# Six side quads (two triangles each) plus a triangulated cap on each ring.
-_FRUSTUM_FACES = np.array(
-    [[k, (k + 1) % 6, 6 + (k + 1) % 6] for k in range(6)]
-    + [[k, 6 + (k + 1) % 6, 6 + k] for k in range(6)]
-    + [[0, k, k + 1] for k in range(1, 5)]              # inner cap
-    + [[6, 6 + k + 1, 6 + k] for k in range(1, 5)],     # outer cap
-    dtype=np.int64,
-)
 
 
 def _frustum_mesh(vertices: np.ndarray, faces: np.ndarray) -> trimesh.Trimesh:
