@@ -45,6 +45,7 @@ from geomeTried3d import Structure  # noqa: E402
 import sdr_enclosure as base  # noqa: E402
 from sdr_enclosure import (  # noqa: E402
     box, cyl_z, cyl_x, cyl_y, countersink_down, countersink_up, concat, vent_grid,
+    rrect, filleted_slab,
 )
 
 P0 = base.PARAMS
@@ -69,6 +70,11 @@ PARAMS = dict(
     sdr_side_gap=0.5,       # SDR to the back wall (minimum)
     pi_end_gap=7.5,         # Pi SD-card end to the +X corner posts
     shelf=3.0,              # tray floor thickness
+
+    # ---- styling ------------------------------------------------------------- #
+    corner_radius=8.0,      # outer vertical corners (inner cavity corners are corner_radius - wall)
+    edge_fillet=2.0,        # lid top edge and lower-box bottom edge
+    seam_chamfer=0.6,       # small chamfer where the three parts meet (shadow lines)
 
     # ---- Ethernet tunnel ---------------------------------------------------- #
     eth_tunnel_w=20.0,      # inner width, measured from the front wall
@@ -178,7 +184,10 @@ def lower_box(L: dict) -> Structure:
     x_in, y_in, z_rim = L["x_in"], L["y_in"], L["z_rim1"]
     att = L["att"]
 
-    body = box(-w, x_in + w, -w, y_in + w, 0, z_rim).difference(box(0, x_in, 0, y_in, f, z_rim + 1))
+    R, Ri = p["corner_radius"], p["corner_radius"] - w
+    shell = filleted_slab(-w, x_in + w, -w, y_in + w, 0, z_rim, R,
+                          fillet_bottom=p["edge_fillet"], chamfer_top=p["seam_chamfer"])
+    body = shell.difference(rrect(0, x_in, 0, y_in, f, z_rim + 1, Ri))
     body = body.union(*[cyl_z(x, y, f - 0.01, z_rim, p["post_d"]) for x, y in L["posts1"]])
 
     cutters = [cyl_z(x, y, z_rim - 12, z_rim + 1, p["post_hole"]) for x, y in L["posts1"]]
@@ -204,7 +213,10 @@ def tray(L: dict) -> Structure:
     z0, z_fl, z_rim = L["z_rim1"], L["z_floor2"], L["z_rim2"]
     pi, sdr = L["pi"], L["sdr"]
 
-    body = box(-w, x_in + w, -w, y_in + w, z0, z_rim).difference(box(0, x_in, 0, y_in, z_fl, z_rim + 1))
+    R, Ri = p["corner_radius"], p["corner_radius"] - w
+    shell = filleted_slab(-w, x_in + w, -w, y_in + w, z0, z_rim, R,
+                          chamfer_top=p["seam_chamfer"], chamfer_bottom=p["seam_chamfer"])
+    body = shell.difference(rrect(0, x_in, 0, y_in, z_fl, z_rim + 1, Ri))
 
     adds = [cyl_z(x, y, z0, z_rim, p["post_d"]) for x, y in L["posts2"]]
     adds += [cyl_z(*L["pi_map"](bx, by), z_fl - 0.01, pi["z_pcb0"], p["standoff_pi_d"]) for bx, by in p["pi_holes"]]
@@ -224,9 +236,9 @@ def tray(L: dict) -> Structure:
     # shelf openings for the cables
     for x0, x1, y0, y1 in (L["shelf_open_usb"], L["shelf_open_sma"]):
         cutters.append(box(x0, x1, y0, y1, z0 - 1, z_fl + 1))
-    # Ethernet opening in the -X end wall
+    # Ethernet opening in the -X end wall, cut through the rounded corner too
     ez0, ez1 = (pi["z_pcb1"] + dz for dz in p["eth_open_z"])
-    cutters.append(box(-w - 1, 1, 0, py0, ez0, ez1))
+    cutters.append(box(-w - 1, Ri + 1, 0, py0, ez0, ez1))
     # Pi power / HDMI window on the front wall
     wx0, wx1, wz = L["pi_window"]
     cutters.append(box(wx0, wx1, -w - 1, 1, wz, z_rim + 1))
@@ -241,7 +253,7 @@ def tray(L: dict) -> Structure:
     while x + sw <= sdr["x1"] - 6:
         cutters.append(box(x, x + sw, y_in - 1, y_in + w + 1, zs0, zs0 + p["slot_h"]))
         x += sp
-    y = pi["y0"] + 3
+    y = max(pi["y0"] + 3, Ri + 1)          # keep the end-wall slots out of the rounded corner
     while y + sw <= pi["y1"] - 3:
         cutters.append(box(x_in - 1, x_in + w + 1, y, y + sw, zs0, zs0 + p["slot_h"]))
         y += sp
@@ -256,9 +268,11 @@ def lid(L: dict) -> Structure:
     z0, z1 = L["z_rim2"], L["z_top"]
     lip_t, lip_h = p["lip_t"], p["lip_h"]
 
-    plate = box(-w, x_in + w, -w, y_in + w, z0, z1)
-    lip = box(c, x_in - c, c, y_in - c, z0 - lip_h, z0 + 0.01).difference(
-        box(c + lip_t, x_in - c - lip_t, c + lip_t, y_in - c - lip_t, z0 - lip_h - 1, z0 + 1))
+    R, Ri = p["corner_radius"], p["corner_radius"] - w
+    plate = filleted_slab(-w, x_in + w, -w, y_in + w, z0, z1, R,
+                          fillet_top=p["edge_fillet"], chamfer_bottom=p["seam_chamfer"])
+    lip = rrect(c, x_in - c, c, y_in - c, z0 - lip_h, z0 + 0.01, Ri - c).difference(
+        rrect(c + lip_t, x_in - c - lip_t, c + lip_t, y_in - c - lip_t, z0 - lip_h - 1, z0 + 1, Ri - c - lip_t))
     body = plate.union(lip)
     wx0, wx1, wz = L["pi_window"]
     body = body.union(box(wx0 + c, wx1 - c, -w + c, -w + c + p["tab_t"], wz + p["pi_window_h"], z0 + 0.01))
@@ -404,6 +418,7 @@ def build(out_dir: str) -> dict:
     scene.export(os.path.join(out_dir, "assembly.glb"))
     plan_drawing(L, os.path.join(out_dir, "plan.png"))
     export_print_3mf(parts, os.path.join(out_dir, "enclosure_all_parts.3mf"))
+    export_plate_3mf(parts, os.path.join(out_dir, "enclosure_h2d_plate.3mf"), bed=(350.0, 320.0))
 
     print(f"outer size: {L['x_out']:.1f} x {L['y_out']:.1f} x {L['z_top']:.1f} mm")
     for name, part in parts.items():
@@ -424,6 +439,33 @@ def export_print_3mf(parts: dict, path: str) -> None:
         s.min_to("z", 0).min_to("x", x).min_to("y", 0)
         plate.add_geometry(s.mesh, node_name=name, geom_name=name)
         x += s.xspan + 10
+    plate.export(path)
+
+
+def export_plate_3mf(parts: dict, path: str, bed=(350.0, 320.0), gap=10.0) -> None:
+    """Lower box and tray one behind the other, lid turned 90 degrees beside
+    them, centred on a bed of the given size (fits a Bambu Lab H2D)."""
+    import numpy as np
+    meshes = {}
+    for name, part in parts.items():
+        s = part.copy()
+        if name == "lid":
+            s.rotate(180, axis=(1, 0, 0)).rotate(90, axis=(0, 0, 1))
+        s.min_to("x", 0).min_to("y", 0).min_to("z", 0)
+        meshes[name] = s
+    col_w = max(meshes["lower_box"].xspan, meshes["tray"].xspan)
+    col_h = meshes["lower_box"].yspan + gap + meshes["tray"].yspan
+    total_w = col_w + gap + meshes["lid"].xspan
+    total_h = max(col_h, meshes["lid"].yspan)
+    if total_w > bed[0] or total_h > bed[1]:
+        print(f"warning: plate layout {total_w:.0f} x {total_h:.0f} exceeds the {bed[0]:.0f} x {bed[1]:.0f} bed")
+    ox, oy = (bed[0] - total_w) / 2, (bed[1] - total_h) / 2
+    meshes["lower_box"].translate((ox, oy, 0))
+    meshes["tray"].translate((ox, oy + meshes["lower_box"].yspan + gap, 0))
+    meshes["lid"].translate((ox + col_w + gap, oy, 0))
+    plate = trimesh.Scene()
+    for name, s in meshes.items():
+        plate.add_geometry(s.mesh, node_name=name, geom_name=name)
     plate.export(path)
 
 

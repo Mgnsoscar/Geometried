@@ -181,6 +181,7 @@ def build(out_dir: str) -> dict:
     plan_drawing(L, os.path.join(out_dir, "plan.png"))
 
     A.export_print_3mf(parts, os.path.join(out_dir, "enclosure_all_parts.3mf"))
+    A.export_plate_3mf(parts, os.path.join(out_dir, "enclosure_h2d_plate.3mf"), bed=(350.0, 320.0))
 
     print(f"outer size: {L['x_out']:.1f} x {L['y_out']:.1f} x {L['z_top']:.1f} mm")
     for name, part in parts.items():

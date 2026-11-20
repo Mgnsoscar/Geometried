@@ -72,6 +72,12 @@ parameter sizes the cable spaces for the plugs you own:
 The orange blocks in the preview are straight plug bodies (USB-B, two SMA,
 two USB-A) placed to prove the run-out room.
 
+Styling: 8 mm rounded vertical corners, a 2 mm fillet on the lid's top edge
+and the lower box's bottom edge, and 0.6 mm chamfers where the three parts
+meet (`corner_radius`, `edge_fillet`, `seam_chamfer`). Each variant also
+writes `enclosure_h2d_plate.3mf`, with its three parts arranged to fit one
+350 x 320 mm Bambu Lab H2D plate.
+
 ![renders](output_attenuator/renders.png)
 
 ![plan](output_attenuator/plan.png)

@@ -156,6 +156,50 @@ def vent_grid(L: dict, z0: float, z1: float, params: dict | None = None) -> list
     return holes
 
 
+def rrect(x0, x1, y0, y1, z0, z1, r, segs=12) -> Structure:
+    """Extruded rectangle with rounded vertical corners of radius r."""
+    if r <= 0:
+        return box(x0, x1, y0, y1, z0, z1)
+    import shapely
+    poly = shapely.box(x0 + r, y0 + r, x1 - r, y1 - r).buffer(r, quad_segs=segs)
+    return Structure.extrude_polygon(poly, z1 - z0, centred=False).translate((0, 0, z0))
+
+
+def filleted_slab(x0, x1, y0, y1, z0, z1, r, fillet_top=0.0, fillet_bottom=0.0,
+                  chamfer_top=0.0, chamfer_bottom=0.0, steps=6) -> Structure:
+    """
+    Rounded-corner slab whose top and/or bottom outer edges are filleted (a
+    quarter-circle profile) or chamfered (45 degrees). Built as the convex hull
+    of thin rounded-rectangle slices, which is exact because every slice is
+    convex.
+    """
+    thin = 0.02
+    slices = []
+
+    def slice_at(z, inset):
+        # keep every slice inside [z0, z1] so the hull never overshoots the faces
+        za, zb_ = (z - thin, z) if z > (z0 + z1) / 2 else (z, z + thin)
+        slices.append(rrect(x0 + inset, x1 - inset, y0 + inset, y1 - inset,
+                            za, zb_, max(r - inset, 0.3)))
+
+    zb = z0 + max(fillet_bottom, chamfer_bottom)
+    zt = z1 - max(fillet_top, chamfer_top)
+    body = rrect(x0, x1, y0, y1, zb, zt, r)
+    if fillet_top > 0:
+        for k in range(1, steps + 1):
+            t = math.pi / 2 * k / steps
+            slice_at(z1 - fillet_top * (1 - math.sin(t)), fillet_top * (1 - math.cos(t)))
+    elif chamfer_top > 0:
+        slice_at(z1, chamfer_top)
+    if fillet_bottom > 0:
+        for k in range(1, steps + 1):
+            t = math.pi / 2 * k / steps
+            slice_at(z0 + fillet_bottom * (1 - math.sin(t)), fillet_bottom * (1 - math.cos(t)))
+    elif chamfer_bottom > 0:
+        slice_at(z0, chamfer_bottom)
+    return body.convex_hull(*slices) if slices else body
+
+
 def u_slot_x(y, z, x0, x1, width, z_top) -> Structure:
     """Drop-in slot through an end wall: round bottom centred on (y, z), open
     up to z_top."""
