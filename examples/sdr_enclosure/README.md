@@ -96,6 +96,36 @@ two USB-A) placed to prove the run-out room.
   box's corner posts (M3), mount the boards, connect the cables, fit the lid.
 * The attenuator's Ethernet port and power LED are inside the box and unused.
 
+## Variant with a bladeRF 2.0 micro: `sdr_enclosure_attenuator_bladerf.py`
+
+```bash
+python examples/sdr_enclosure/sdr_enclosure_attenuator_bladerf.py   # writes to output_attenuator_bladerf/
+```
+
+The attenuator box above with a Nuand bladeRF 2.0 micro (xA4 / xA9, board
+only) instead of the B206mini-i. The file only swaps the board numbers; the
+other two scripts are untouched. Outer size **195.9 x 138 x 63.6 mm** with
+straight plugs (the bladeRF is 101.6 x 63.5 mm, so the tray is 27 mm longer).
+
+![renders](output_attenuator_bladerf/renders.png)
+
+![plan](output_attenuator_bladerf/plan.png)
+
+* Board data comes from Nuand's `micro.dxf` and `estimate.STEP`: Ø2.54 mm
+  holes at 6.35 / 88.9 by 6.35 / 57.15 mm (use M2.5 screws), SMAs TX1, RX1,
+  RX2, TX2 on one short edge, USB 3.0 Type-B and the DC barrel jack on the
+  other.
+* The bladeRF lies beside the Pi with its USB / DC edge facing the cable bay
+  and its SMAs pointing into the +X channel. **TX1** is the port nearest the
+  back wall and sits over the attenuator's internal SMA; the jumper goes
+  there. The other three ports stay inside.
+* It is powered from the Pi over a straight USB 3.0 A-to-B cable (about
+  30 cm); the bay is 45 mm deep for that plug. The DC jack faces the bay too,
+  so an external 5 V supply could be led in later if the xA9 turns out to
+  draw more than a Pi USB port gives.
+* `output_attenuator_bladerf/enclosure_all_parts.3mf` holds the three parts
+  in print orientation, like the other variant.
+
 ## Printing
 
 `output_attenuator/enclosure_all_parts.3mf` holds the three parts of the
