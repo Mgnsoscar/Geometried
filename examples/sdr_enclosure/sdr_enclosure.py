@@ -123,6 +123,39 @@ def cyl_x(y, z, x0, x1, d) -> Structure:
     return c.translate(((x0 + x1) / 2, y, z))
 
 
+def cyl_y(x, z, y0, y1, d) -> Structure:
+    """Cylinder along Y (holes through the front / back walls)."""
+    c = Cylinder(d / 2, y1 - y0, sections=P("sections"))
+    c.rotate(90, axis=(1, 0, 0))
+    return c.translate((x, (y0 + y1) / 2, z))
+
+
+def countersink_up(x, y, z0, d_screw, d_head) -> Structure:
+    """90-degree countersink opening downwards, head flush with the face at z0."""
+    depth = (d_head - d_screw) / 2
+    cone = Cone.frustum(d_head / 2, d_screw / 2, depth, sections=P("sections"))
+    return cone.translate((x, y, z0 + depth / 2 - 0.01))
+
+
+def vent_grid(L: dict, z0: float, z1: float, params: dict | None = None) -> list:
+    """Hex-packed round holes over the Active Cooler footprint, as cutters."""
+    p = params or PARAMS
+    (cx0, cx1), (cy0, cy1) = p["pi_cooler_x"], p["pi_cooler_y"]
+    xa, ya = L["pi_map"](cx1, cy0)
+    xb, yb = L["pi_map"](cx0, cy1)
+    pitch, d = p["vent_pitch"], p["vent_hole_d"]
+    row = pitch * math.sqrt(3) / 2
+    holes, j = [], 0
+    while ya + d / 2 + j * row + d / 2 <= yb:
+        y = ya + d / 2 + j * row
+        x = xa + d / 2 + (pitch / 2 if j % 2 else 0.0)
+        while x + d / 2 <= xb:
+            holes.append(cyl_z(x, y, z0, z1, d))
+            x += pitch
+        j += 1
+    return holes
+
+
 def u_slot_x(y, z, x0, x1, width, z_top) -> Structure:
     """Drop-in slot through an end wall: round bottom centred on (y, z), open
     up to z_top."""
@@ -304,21 +337,7 @@ def lid(L: dict) -> Structure:
                            z0 - lip_h - 1, z1 + 1))
 
     # fan intake grille over the active cooler
-    (cx0, cx1), (cy0, cy1) = p["pi_cooler_x"], p["pi_cooler_y"]
-    xa, ya = L["pi_map"](cx1, cy0)
-    xb, yb = L["pi_map"](cx0, cy1)
-    pitch, d = p["vent_pitch"], p["vent_hole_d"]
-    row = pitch * math.sqrt(3) / 2
-    holes = []
-    j = 0
-    while ya + d / 2 + j * row + d / 2 <= yb:
-        y = ya + d / 2 + j * row
-        x = xa + d / 2 + (pitch / 2 if j % 2 else 0.0)
-        while x + d / 2 <= xb:
-            holes.append(cyl_z(x, y, z0 - 1, z1 + 1, d))
-            x += pitch
-        j += 1
-    cutters.append(concat(holes))
+    cutters.append(concat(vent_grid(L, z0 - 1, z1 + 1)))
 
     return body.difference(*cutters)
 
@@ -328,7 +347,11 @@ def lid(L: dict) -> Structure:
 # --------------------------------------------------------------------------- #
 
 def placeholders(L: dict) -> dict:
-    p = PARAMS
+    return placeholders_boards(L, PARAMS)
+
+
+def placeholders_boards(L: dict, p: dict) -> dict:
+    """Pi and SDR placeholders for any layout that defines pi/sdr and their maps."""
     pi, sdr = L["pi"], L["sdr"]
     m = L["pi_map"]
 

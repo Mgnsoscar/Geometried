@@ -54,6 +54,39 @@ Outer size with the default parameters: **144 x 124.5 x 33.6 mm**.
    the SMA slots and the long tab closes the top of the HDMI/USB-C window.
    Four M3 countersunk screws go into the corner posts.
 
+## Variant with the attenuator: `sdr_enclosure_attenuator.py`
+
+```bash
+python examples/sdr_enclosure/sdr_enclosure_attenuator.py   # writes to output_attenuator/
+```
+
+Adds an Adaura AD-USB1AR36G95 attenuator in a second storey underneath the
+boards. Outer size **140 x 118 x 63.6 mm**, three printed parts
+(`lower_box`, `tray`, `lid`).
+
+![renders](output_attenuator/renders.png)
+
+![plan](output_attenuator/plan.png)
+
+* RF path is SDR TRX -> attenuator -> **RF OUT** SMA on the front wall of the
+  lower box. The attenuator's other SMA points sideways inside the box; a
+  short right-angle-to-right-angle SMA jumper (about 10 cm) goes up through an
+  opening in the shelf to the SDR's TRX connector, which sits directly above
+  it. RX2 and REF stay inside.
+* Only three things reach the outside: the RF OUT SMA, the Pi's USB-C power
+  and HDMI (front wall of the tray), and the Pi's Ethernet jack through a
+  tunnel in the -X end wall. A 1.6 mm partition walls the tunnel off from the
+  cable bay, so the four USB-A ports beside it stay internal.
+* The attenuator's USB-B port faces the -X end of the lower box across a
+  16.5 mm channel (use a right-angle USB-B cable). The cable goes up through
+  the second shelf opening into the bay and into a Pi USB port; the SDR's
+  USB-C cable is in the same bay.
+* Assembly: screw the attenuator down with two M4 countersunk screws from
+  below (the attenuator's Ø5 holes are through-holes), sliding it towards the
+  front wall so the RF OUT barrel enters its hole. Screw the tray to the lower
+  box's corner posts (M3), mount the boards, connect the cables, fit the lid.
+* The attenuator's Ethernet port and power LED are inside the box and unused.
+
 ## Dimensions this is built on
 
 * Raspberry Pi 5 mechanical drawing (board, holes, port positions) and the
