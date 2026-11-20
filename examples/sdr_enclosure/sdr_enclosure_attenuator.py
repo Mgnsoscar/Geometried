@@ -64,12 +64,10 @@ PARAMS = dict(
     att_head_clear=1.3,             # over the attenuator, under the shelf
 
     # ---- layout ------------------------------------------------------------ #
-    usb_b_channel=16.5,     # -X channel on the lower floor for a right-angle USB-B plug
-    bay_len=28.0,           # enclosed cable bay on the tray (-X end)
+    plugs="straight",       # "straight" or "right_angle": sets the three run-out spaces below
     board_gap=4.0,          # Pi to SDR
-    sdr_side_gap=0.5,       # SDR to the back wall
+    sdr_side_gap=0.5,       # SDR to the back wall (minimum)
     pi_end_gap=7.5,         # Pi SD-card end to the +X corner posts
-    sma_plug_rise=9.0,      # right-angle SMA plug body beyond the connector tip
     shelf=3.0,              # tray floor thickness
 
     # ---- Ethernet tunnel ---------------------------------------------------- #
@@ -77,6 +75,18 @@ PARAMS = dict(
     eth_partition=1.6,
     eth_open_z=(-1.5, 18.0),  # opening in the end wall, relative to the Pi PCB top (jack is 13.6 tall)
 )
+
+# Run-out space in front of each connector: plug body plus the cable's bend.
+PLUG_PRESETS = {
+    "straight": dict(
+        usb_b_channel=45.0,   # lower floor, -X end: 32 mm USB-B plug + bend up to the shelf opening
+        bay_len=40.0,         # tray, -X end: USB-A and USB-C plugs + bend along the bay
+        sma_strip=32.0,       # beyond the attenuator's internal SMA tip: 20 mm plug + bend up
+        sma_channel=30.0,     # beyond the SDR's TRX tip on the tray: plug + bend down
+    ),
+    "right_angle": dict(usb_b_channel=16.5, bay_len=28.0, sma_strip=9.0, sma_channel=9.0),
+}
+PARAMS.update(PLUG_PRESETS[PARAMS["plugs"]])
 
 
 # --------------------------------------------------------------------------- #
@@ -121,7 +131,7 @@ def layout() -> dict:
     sdr_x1 = sdr_x0 + p["sdr_len"]
     sdr_y0 = L["pi"]["y1"] + p["board_gap"]
     sdr_y1 = sdr_y0 + p["sdr_wid"]
-    L["y_in"] = sdr_y1 + p["sdr_side_gap"]
+    L["y_in"] = max(sdr_y1 + p["sdr_side_gap"], L["att"]["y_sma_in_tip"] + p["sma_strip"])
     L["sdr"] = dict(x0=sdr_x0, x1=sdr_x1, y0=sdr_y0, y1=sdr_y1,
                     z_pcb0=L["z_floor2"] + p["sdr_standoff"])
     L["sdr"]["z_pcb1"] = L["sdr"]["z_pcb0"] + p["sdr_pcb"]
@@ -135,7 +145,7 @@ def layout() -> dict:
     L["sdr"]["y_trx"] = L["sdr_map"](0, p["sdr_sma_y"][0])[1]
 
     assert pi_x1 + p["pi_end_gap"] <= L["x_in"], "Pi does not fit in front of the +X posts"
-    assert L["att"]["y_sma_in_tip"] + p["sma_plug_rise"] <= L["y_in"], "no room for the internal SMA plug"
+    L["x_in"] = max(L["x_in"], L["sdr"]["x_sma_tip"] + p["sma_channel"] + p["post_inset"])
 
     # ---- outer, posts, openings -------------------------------------------- #
     L["x_out"], L["y_out"] = L["x_in"] + 2 * w, L["y_in"] + 2 * w
@@ -152,7 +162,8 @@ def layout() -> dict:
 
     # shelf openings: USB-B cable up from the -X channel; SMA jumper over the attenuator's SMA
     L["shelf_open_usb"] = (2.0, p["usb_b_channel"] - 1.5, L["posts2"][0][1] + i + 1.0, L["att"]["y1"])
-    L["shelf_open_sma"] = (L["att"]["x_sma"] - 4.0, L["x_in"] - i - p["post_d"] / 2 - 1.5,
+    L["shelf_open_sma"] = (min(L["att"]["x_sma"] - 4.0, L["sdr"]["x_sma_tip"] + 2.0),
+                           L["x_in"] - i - p["post_d"] / 2 - 1.5,
                            L["att"]["y1"] - 2.0, L["y_in"] - i - p["post_d"] / 2 - 1.5)
     return L
 
@@ -276,6 +287,18 @@ def placeholders(L: dict) -> dict:
     sma_out = cyl_y(att["x_sma"], att["z_sma"], att["y0"] - p["att_sma_len"], att["y0"] + 1, 6.35)
     sma_in = cyl_y(att["x_sma"], att["z_sma"], att["y1"] - 1, att["y_sma_in_tip"], 6.35)
     out["att"] = body.union(sma_out, sma_in).set_color(60, 60, 65)
+
+    if p["plugs"] == "straight":
+        # straight plug bodies, to prove the run-out spaces: USB-B on the
+        # attenuator, SMA on both ends of the jumper, USB-A x2 on the Pi
+        pi, sdr = L["pi"], L["sdr"]
+        usb_b = box(att["x0"] - 32, att["x0"], att["y_usb"] - 6, att["y_usb"] + 6,
+                    att["z0"] + 9, att["z0"] + 20)
+        sma_a = cyl_y(att["x_sma"], att["z_sma"], att["y_sma_in_tip"] - 4, att["y_sma_in_tip"] + 18, 8.0)
+        sma_s = cyl_x(sdr["y_trx"], sdr["z_sma"], sdr["x_sma_tip"] - 4, sdr["x_sma_tip"] + 18, 8.0)
+        usb_a = [box(pi["x0"] - 2.5 - 20, pi["x0"] - 2.5, L["pi_map"](0, y)[1] - 7.5, L["pi_map"](0, y)[1] + 7.5,
+                     pi["z_pcb1"] + 1, pi["z_pcb1"] + 7) for y in p["pi_usb_y"]]
+        out["plugs"] = usb_b.union(sma_a, sma_s, *usb_a).set_color(230, 140, 40)
     return out
 
 

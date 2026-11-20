@@ -61,24 +61,33 @@ python examples/sdr_enclosure/sdr_enclosure_attenuator.py   # writes to output_a
 ```
 
 Adds an Adaura AD-USB1AR36G95 attenuator in a second storey underneath the
-boards. Outer size **140 x 118 x 63.6 mm**, three printed parts
-(`lower_box`, `tray`, `lid`).
+boards. Three printed parts (`lower_box`, `tray`, `lid`). The `plugs`
+parameter sizes the cable spaces for the plugs you own:
+
+| `plugs` | outer size | needs |
+|---|---|---|
+| `"straight"` (default) | **168.5 x 138 x 63.6 mm** | ordinary straight USB and SMA cables |
+| `"right_angle"` | 140 x 118 x 63.6 mm | right-angle USB-B cable and a right-angle SMA jumper |
+
+The orange blocks in the preview are straight plug bodies (USB-B, two SMA,
+two USB-A) placed to prove the run-out room.
 
 ![renders](output_attenuator/renders.png)
 
 ![plan](output_attenuator/plan.png)
 
 * RF path is SDR TRX -> attenuator -> **RF OUT** SMA on the front wall of the
-  lower box. The attenuator's other SMA points sideways inside the box; a
-  short right-angle-to-right-angle SMA jumper (about 10 cm) goes up through an
-  opening in the shelf to the SDR's TRX connector, which sits directly above
-  it. RX2 and REF stay inside.
+  lower box. The attenuator's other SMA points sideways inside the box into a
+  strip along the back wall; a short SMA jumper (about 15 cm with straight
+  plugs) goes up through an opening in the shelf to the SDR's TRX connector,
+  which points into the channel at the +X end of the tray. RX2 and REF stay
+  inside.
 * Only three things reach the outside: the RF OUT SMA, the Pi's USB-C power
   and HDMI (front wall of the tray), and the Pi's Ethernet jack through a
   tunnel in the -X end wall. A 1.6 mm partition walls the tunnel off from the
   cable bay, so the four USB-A ports beside it stay internal.
 * The attenuator's USB-B port faces the -X end of the lower box across a
-  16.5 mm channel (use a right-angle USB-B cable). The cable goes up through
+  45 mm channel (16.5 mm in the right-angle preset). The cable goes up through
   the second shelf opening into the bay and into a Pi USB port; the SDR's
   USB-C cable is in the same bay.
 * Assembly: screw the attenuator down with two M4 countersunk screws from
