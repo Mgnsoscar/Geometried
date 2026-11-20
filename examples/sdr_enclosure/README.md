@@ -96,6 +96,20 @@ two USB-A) placed to prove the run-out room.
   box's corner posts (M3), mount the boards, connect the cables, fit the lid.
 * The attenuator's Ethernet port and power LED are inside the box and unused.
 
+## Printing
+
+`output_attenuator/enclosure_all_parts.3mf` holds the three parts of the
+attenuator box as separate objects, already in print orientation (lower box
+and tray on their floors, lid face down). Open it in Bambu Studio and press
+Arrange: on a 256 x 256 bed (X1C, P1S, A1) each 168.5 x 138 mm part gets its
+own plate; on an H2D (350 x 320) all three fit one plate.
+
+Suggested settings: 0.2 mm layers, 3 walls, 5 top/bottom layers, 15 % infill,
+PETG or ASA if the box will sit somewhere warm (PLA is fine on a desk). No
+supports are needed: every opening is either a vertical slot open at the top
+or a short bridge, and the countersinks print as 45-degree cones. Use a brim
+if your first layer tends to lift on long edges.
+
 ## Dimensions this is built on
 
 * Raspberry Pi 5 mechanical drawing (board, holes, port positions) and the
