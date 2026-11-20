@@ -403,6 +403,7 @@ def build(out_dir: str) -> dict:
         scene.add_geometry(ph.mesh, node_name=f"device_{name}")
     scene.export(os.path.join(out_dir, "assembly.glb"))
     plan_drawing(L, os.path.join(out_dir, "plan.png"))
+    export_print_3mf(parts, os.path.join(out_dir, "enclosure_all_parts.3mf"))
 
     print(f"outer size: {L['x_out']:.1f} x {L['y_out']:.1f} x {L['z_top']:.1f} mm")
     for name, part in parts.items():
@@ -410,6 +411,20 @@ def build(out_dir: str) -> dict:
         print(f"{name:10s} {b[1][0]-b[0][0]:6.1f} x {b[1][1]-b[0][1]:6.1f} x {b[1][2]-b[0][2]:5.1f} mm  "
               f"volume {part.volume/1000:6.1f} cm^3  faces {len(part.faces)}")
     return L
+
+
+def export_print_3mf(parts: dict, path: str) -> None:
+    """All parts in print orientation (lid upside down), side by side, as one 3MF."""
+    plate = trimesh.Scene()
+    x = 0.0
+    for name, part in parts.items():
+        s = part.copy()
+        if name == "lid":
+            s.rotate(180, axis=(1, 0, 0))
+        s.min_to("z", 0).min_to("x", x).min_to("y", 0)
+        plate.add_geometry(s.mesh, node_name=name, geom_name=name)
+        x += s.xspan + 10
+    plate.export(path)
 
 
 if __name__ == "__main__":

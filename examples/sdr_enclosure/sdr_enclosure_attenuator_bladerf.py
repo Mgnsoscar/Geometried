@@ -180,17 +180,7 @@ def build(out_dir: str) -> dict:
     scene.export(os.path.join(out_dir, "assembly.glb"))
     plan_drawing(L, os.path.join(out_dir, "plan.png"))
 
-    # print-ready 3MF: all three parts in print orientation
-    plate = trimesh.Scene()
-    x = 0.0
-    for name in ("lower_box", "tray", "lid"):
-        s = parts[name].copy()
-        if name == "lid":
-            s.rotate(180, axis=(1, 0, 0))
-        s.min_to("z", 0).min_to("x", x).min_to("y", 0)
-        plate.add_geometry(s.mesh, node_name=name, geom_name=name)
-        x += s.xspan + 10
-    plate.export(os.path.join(out_dir, "enclosure_all_parts.3mf"))
+    A.export_print_3mf(parts, os.path.join(out_dir, "enclosure_all_parts.3mf"))
 
     print(f"outer size: {L['x_out']:.1f} x {L['y_out']:.1f} x {L['z_top']:.1f} mm")
     for name, part in parts.items():

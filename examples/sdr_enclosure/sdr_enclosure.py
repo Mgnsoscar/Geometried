@@ -84,7 +84,7 @@ PARAMS = dict(
     bay_top_open=True,   # cut the lid away over the bay (easier to reach the ports)
 
     # ---- fasteners -------------------------------------------------------- #
-    post_d=7.0, post_hole=2.6, post_inset=3.5,     # M3 thread-forming into the corner posts
+    post_d=7.0, post_hole=2.6, post_inset=3.2,     # M3 thread-forming; posts overlap the walls by 0.3 mm
     screw_d=3.4, csk_d=6.4,                        # M3 countersunk through the lid
     standoff_pi_d=6.5, standoff_pi_hole=2.2,       # M2.5 thread-forming
     standoff_sdr_d=7.0, standoff_sdr_hole=2.6,     # M3 thread-forming
